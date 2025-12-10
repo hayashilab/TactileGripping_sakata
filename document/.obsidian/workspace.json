@@ -1,0 +1,255 @@
+{
+  "main": {
+    "id": "59fffff6841b88a5",
+    "type": "split",
+    "children": [
+      {
+        "id": "737ff38977bab75c",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "8a93caeab57dd069",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "2025/Research/date/2025-12/2025-12-02.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "2025-12-02"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "7a2445da931d7547",
+    "type": "split",
+    "children": [
+      {
+        "id": "8b73e5aa1247feeb",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "1c68767a1a093dcc",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "d0c7010ed97a02d8",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "ba74dfc98d04da0c",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          },
+          {
+            "id": "243fa8966596794b",
+            "type": "leaf",
+            "state": {
+              "type": "recent-files",
+              "state": {},
+              "icon": "clock",
+              "title": "Recent Files"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "bdf6ffdce30d15be",
+    "type": "split",
+    "children": [
+      {
+        "id": "283700f6acf59598",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "537f0ec96b074a65",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "2025/Research/date/2025-12/December.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for December"
+            }
+          },
+          {
+            "id": "4c7b262a019d358d",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "2025/Research/date/2025-12/December.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from December"
+            }
+          },
+          {
+            "id": "85a95a5d85276c1c",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "04b49ac46d6c3d04",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "eaa74884e15db70d",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "2025/Research/date/2025-12/December.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of December"
+            }
+          },
+          {
+            "id": "05f5f3cfc9378135",
+            "type": "leaf",
+            "state": {
+              "type": "calendar",
+              "state": {},
+              "icon": "lucide-ghost",
+              "title": "calendar"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "8a93caeab57dd069",
+  "lastOpenFiles": [
+    "2025/Research/basic/Building a note-taking environment by Obsidian X GoogleDrive.md",
+    "2025/Research/date/2025-08/2025-08-27.md",
+    "2025/Research/date/2025-08/2025-08-20.md",
+    "2025-08-27.md",
+    "2025/Research/date/2025-12/December.md",
+    "2025/Research/date/2025-12/2025-12-02.md",
+    "2025/Research/date/date.md",
+    "2025/Research/date/2025-04/April.md",
+    "2025/Research/date/2025-09/September.md",
+    "2025/Research/date/2025-08/August.md",
+    "2025/Research/date/2025-07/July.md",
+    "2025/Research/date/2025-07/2025-07-31.md",
+    "2025/Research/date/2025-08/2025.08.20.md",
+    "2025/Research/date/2025-10/October.md",
+    "2025/Research/basic/basic.md",
+    "2025/Research/date/2025-11/November.md",
+    "2025/AdvPractice/AdvPractice.md",
+    "2025/Research/date/2025-10/2025.10.27.md",
+    "2025/Research/date/2025-09/2025.09.03.md",
+    "2025/Research/date/2025-08/2025.08.27.md",
+    "2025/Research/date/2025-04/2025-04-25.md",
+    "2025/Research/date/2025-04/2025-04-23.md",
+    "2025/Research/date/2025-04/2025-04-18.md",
+    "2025/Research/date/2025-04/2025-04-17.md",
+    "2025/Research/date/2025-04/2025-04-14.md",
+    "2025/Research/date/2026-02",
+    "2025/Research/date/2026-01",
+    "2025/Research/date/2025-12",
+    "2025/Research/date/2025-11",
+    "2025/Research/date/2025-10",
+    "2025/Research/date/2025-09",
+    "2025/Research/date/2025-08",
+    "2025/Research/date/2025-07",
+    "2025/Research/date/2025-06",
+    "2025/Research/date/2025-05",
+    "2025/Research/2025.07.31.md",
+    "2025/Research/asset/os_customisation_services.png",
+    "2025/Research/asset/os_customisation_general.png",
+    "2025/Research/asset/Screenshot from 2025-12-02 15-36-00.png",
+    "2025/Research/asset/Pasted image 20250425165112.png",
+    "2025/Research/asset/Pasted image 20250418182816.png",
+    "2025/AdvPractice/asset/Screenshot from 2025-04-18 15-16-29.png",
+    "2025/AdvPractice/asset/Pasted image 20250418151748.png",
+    "2025/AdvPractice/asset/Pasted image 20250417123249.png",
+    "2025/AdvPractice/asset/Pasted image 20250417123152.png",
+    "2025/AdvPractice/asset/Pasted image 20250417123059.png"
+  ]
+}

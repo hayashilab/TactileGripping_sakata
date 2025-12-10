@@ -1,0 +1,11 @@
+{
+  "date-inserter:open-calendar": [
+    {
+      "modifiers": [
+        "Mod",
+        "Shift"
+      ],
+      "key": "D"
+    }
+  ]
+}
