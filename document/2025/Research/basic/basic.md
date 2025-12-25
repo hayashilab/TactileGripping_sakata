@@ -12,7 +12,13 @@
 ---
 ### Obsidian X GoogleDrive(rclone)
    [[Building a note-taking environment by Obsidian X GoogleDrive]]
-   
+
+---
+
+### How to use git
+[[git-notes]]
+
+
    
    
 

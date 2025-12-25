@@ -11,4 +11,4 @@ __pycache__/
 .vscode/
 
 # obsidian
-~/document/.obsidian/
+document/.obsidian/
