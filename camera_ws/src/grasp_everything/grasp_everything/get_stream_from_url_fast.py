@@ -7,17 +7,11 @@ import warnings
 import time 
 import queue
 
-from utils.utils import *  # poisson_reconstruct, find_marker, interpolate_grad など
-from utils.Vis3D import ClassVis3D
-
 # カメラのIPアドレスとポート番号を設定
 IP = "192.168.1.120"
 PORT = "8000"
 
 # Constants
-DEPTH_TO_MM = 13.75
-PX_TO_MM = 16.6
-DEPTH_THRESHOLD = 0.1
 AUTO_CLIP_OFFSET = 10 # [frames]
 
 def IP_to_url(IP, PORT):
@@ -162,9 +156,8 @@ class AsyncAviSaver:
             except Exception:
                 pass
 class GETTactileStream:
-    def __init__(self, markers=False):
+    def __init__(self):
         self._ref_frame = None
-        self.markers = markers  # Trueでマーカー補間（重い）
 
         # === REMOVED: corners / tactile_mask / mask生成関連 ===
 
@@ -200,73 +193,7 @@ class GETTactileStream:
         diff = (img_bgr.astype(np.float32) - ref_blur.astype(np.float32)) / 255.0 + 0.5
         return diff
 
-    # === CHANGED: マスク外ゼロ化を削除（全画素で勾配） ===
-    def _img2grad(self, diff_img, tactile_mask=None, eps=1e-6):
-        """
-        diff_img: float32 (H,W,3), 値域 [0,1], 中立 0.5
-        tactile_mask: (H,W) 0/1 or bool. Noneならマスクなし。
-        return: dx, dy float32 (H,W)
-        """
-        if diff_img is None:
-            return None, None
-
-        # mask外を0.5に固定（中立）
-        if tactile_mask is not None:
-            d = diff_img.copy()
-            d[tactile_mask == 0] = 0.5
-        else:
-            d = diff_img
-
-        # OpenCV(BGR)としてチャンネルを取り出し
-        B = d[:, :, 0]
-        G = d[:, :, 1]
-        R = d[:, :, 2]
-
-        # ---- Aの定義（色差→傾き）----
-        dx = (B - (R + G) * 0.5)     # 元コードの index をBGRに合わせて解釈した例
-        dy = (R - G)
-
-        # 数値安定化：sqrt(1 - dx^2) の中が負にならないようクリップ
-        dx = np.clip(dx, -0.999, 0.999)
-        dy = np.clip(dy, -0.999, 0.999)
-
-        dx = dx / (np.sqrt(1.0 - dx * dx) + eps) / 128.0
-        dy = dy / (np.sqrt(1.0 - dy * dy) + eps) / 128.0
-
-        return dx.astype(np.float32), dy.astype(np.float32)
-
-    # （任意）markers=Trueのときに勾配補間
-    def _demark_grad(self, diff_img, dx, dy):
-        if diff_img is None:
-            return dx, dy
-
-        if diff_img.ndim == 2:
-            diff_3ch = cv2.cvtColor(diff_img.astype(np.float32), cv2.COLOR_GRAY2BGR)
-        else:
-            diff_3ch = diff_img.astype(np.float32)
-
-        mask = find_marker(diff_3ch)
-        dx = interpolate_grad(dx, mask)
-        dy = interpolate_grad(dy, mask)
-        return dx, dy
-
-    def _grad2depth(self, diff_img, dx, dy):
-        if dx is None or dy is None:
-            return None
-
-        if self.markers:
-            dx, dy = self._demark_grad(diff_img, dx, dy)
-
-        zeros = np.zeros_like(dx, dtype=np.float32)
-        unitless_depth = poisson_reconstruct(dy, dx, zeros)
-        depth_mm = DEPTH_TO_MM * unitless_depth
-        return depth_mm.astype(np.float32)
-
-    def _img2depth(self, diff_img):
-        dx, dy = self._img2grad(diff_img)
-        return self._grad2depth(diff_img, dx, dy)
-            
-    def start_stream(self, plot=True, plot_diff=True, plot_depth=True):
+    def start_stream(self, plot=True, plot_diff=True):
         url = IP_to_url(IP, PORT)
         cap = self._open_capture(url)
         if not cap.isOpened():
@@ -278,8 +205,6 @@ class GETTactileStream:
         saver = AsyncAviSaver(out_path="./videos/tactile_stream.avi", fps=30.0, fourcc = "MJPG", max_queue = 128, drop_if_full=True, resize_to = None).start()
 
         self._reset()
-        vis3d = None
-
         print("Streaming...")
         while True:
             ret, frame = reader.read()
@@ -297,19 +222,12 @@ class GETTactileStream:
                 cv2.imshow("raw_RGB", frame)
 
             diff_rgb = None
-            if plot_diff or plot_depth:
+            if plot_diff:
                 diff_rgb = self._calc_diff_rgb(self._ref_frame, frame, ksize=11, sigma=0)
 
             if plot_diff and diff_rgb is not None:
                 diff_vis = np.clip(diff_rgb * 255.0, 0, 255).astype(np.uint8)
                 cv2.imshow("diff_rgb", diff_vis)
-
-            if plot_depth and diff_rgb is not None:
-                depth = self._img2depth(diff_rgb)
-                if depth is not None:
-                    if vis3d is None:
-                        vis3d = ClassVis3D(n=depth.shape[1], m=depth.shape[0])
-                    vis3d.update(depth / PX_TO_MM)
 
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
@@ -325,5 +243,5 @@ class GETTactileStream:
 
 
 if __name__ == "__main__":
-    GET_Stream = GETTactileStream(markers=False)  # markers=Trueで補間ON（重い）
-    GET_Stream.start_stream(plot=True, plot_diff=True, plot_depth=True)
+    GET_Stream = GETTactileStream()
+    GET_Stream.start_stream(plot=True, plot_diff=True)

@@ -12,11 +12,13 @@ __pycache__/
 
 # obsidian
 document/.obsidian/
-document/2025/AdvPractice
-document/2025/IntPractice
+document/2025/AdvPractice/
+document/2025/IntPractice/
+document/2025/Research/asset/videos/
 
 # video
 camera_ws/src/GraspEverything/videos/
+
 
 # CLI
 AGENTS.md
