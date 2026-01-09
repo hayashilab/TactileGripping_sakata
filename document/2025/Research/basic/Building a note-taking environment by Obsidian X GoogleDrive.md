@@ -67,9 +67,11 @@
 - [ ] 正しいコマンドでのバックアップ実行（今後の作業）  
   (- <span style="color:#2196f3">これまでの作業をobsidianに記録しておくために質問内容も含めてmdファイルに出力してください</span> / <span style="color:#2196f3">質問した結果出た作業内容にはその後に質問内容を付け加えて</span> )  
   - 修正コマンド：  
-    `rclone copy ./worksp/document gdrive:obsidian-backup --verbose`  
+```bash
+$ rclone copy ./worksp/document gdrive:obsidian-backup --verbose
+```  
   - まずは `--dry-run` で確認：  
-```
+```bash
 $ rclone copy ./worksp/document gdrive:obsidian-backup --verbose --dry-run
 ```
 

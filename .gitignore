@@ -15,5 +15,8 @@ document/.obsidian/
 document/2025/AdvPractice
 document/2025/IntPractice
 
+# video
+camera_ws/src/GraspEverything/videos/
+
 # CLI
 AGENTS.md
