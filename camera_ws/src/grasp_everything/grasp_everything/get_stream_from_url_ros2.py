@@ -59,7 +59,7 @@ class TactileRgbDiffPublisher(Node):
         self.declare_parameter("ip", "192.168.1.120")
         self.declare_parameter("port", 8000)
         self.declare_parameter("cam_id", 0)
-        self.declare_parameter("publish_hz", 120.0)
+        self.declare_parameter("publish_hz", 30.0)
         self.declare_parameter("ksize", 11)
         self.declare_parameter("sigma", 0.0)
         self.declare_parameter("publish_diff_vis", True)  # 可視化用bgr8も出す

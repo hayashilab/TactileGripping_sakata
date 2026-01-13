@@ -12,6 +12,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*')),
         ('share/' + package_name + '/weights', glob('weights/*')),
+        ('share/grasp_everything/launch', ['launch/view_stream.launch.py']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
