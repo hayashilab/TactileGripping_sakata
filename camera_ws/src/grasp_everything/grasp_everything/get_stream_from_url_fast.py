@@ -155,15 +155,17 @@ class AsyncAviSaver:
                 self._writer.release()
             except Exception:
                 pass
+
+### ストリーミングクラス
 class GETTactileStream:
     def __init__(self):
         self._ref_frame = None
 
-        # === REMOVED: corners / tactile_mask / mask生成関連 ===
-
     def _reset(self):
         self._ref_frame = None
 
+    #--- 動画キャプチャオープン ---
+    #--- 2026-01-16 loreで640x480で受け取るようにimaging_driver側を修正 ---
     def _open_capture(self, url):
         cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
         if not cap.isOpened():
@@ -171,8 +173,8 @@ class GETTactileStream:
             cap = cv2.VideoCapture(url)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         return cap
-
-    # === CHANGED: マスク処理を完全に削除 ===
+    
+    # --- diff計算 ---
     def _calc_diff_gray(self, ref_bgr, img_bgr, ksize=11, sigma=0):
         if ref_bgr is None or img_bgr is None:
             return None
@@ -184,7 +186,8 @@ class GETTactileStream:
         diff_img = (img_g.astype(np.float32) - ref_blur.astype(np.float32)) / 255.0 + 0.5
         diff_img = np.clip(diff_img, 0.0, 1.0)
         return diff_img
-
+    
+    # --- diff計算 RGB版 ---    
     def _calc_diff_rgb(self, ref_bgr, img_bgr, ksize=11, sigma=0):
         if ref_bgr is None or img_bgr is None:
             return None

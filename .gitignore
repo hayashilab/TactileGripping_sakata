@@ -19,6 +19,7 @@ document/2025/Research/asset/videos/
 # video
 camera_ws/src/GraspEverything/videos/
 
+camera_ws/src/calib_c920
 
 # CLI
 AGENTS.md
