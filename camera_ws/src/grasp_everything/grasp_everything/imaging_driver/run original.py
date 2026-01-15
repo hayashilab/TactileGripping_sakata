@@ -34,26 +34,24 @@ default_settings = {}
 # detect the number and model of camera(s) attached
 camera_info = Picamera2.global_camera_info()
 for cam in camera_info:
-    if cam["Model"] == "imx708_wide":
+    if cam["Model"] == "imx708":
         if "Num" in cam:
             cam_id = cam["Num"]
         else:
             cam_id = 0
         default_settings["cam{}".format(cam_id)] = {
             "enable": True,
-            "resolution": (2304, 1296),  # メインストリーム（画角維持）
-            "stream_resolution": (640, 360),  # ストリーミング用低解像度（lores）
+            "resolution": (2304, 1296),
             "controls": {
                 "AeEnable": False,
-                "AnalogueGain": 2,
-                "ExposureTime": 20000,
-                "FrameDurationLimits": (30000, 30000),
+                "AnalogueGain": 4,
+                "ExposureTime": 30000,
                 "AwbEnable": False,
-                "ColourGains": (1.9, 2.5),
+                "ColourGains": (1.6, 2.0),
             },
             "focusControls": {
                 "AfMode": 0, # AfModeManual = 0, AfModeAuto = 1, AfModeContinuous = 2
-                "LensPosition":3.5,
+                "LensPosition": 10.0,
             }
         }
     else:
@@ -108,19 +106,7 @@ def setup_camera():
                     cameras[id].close()
                     cameras[id] = None
                 cameras[id] = Picamera2(id)
-                # loresストリームを使用して画角を維持しながら低解像度でストリーミング
-                cam_settings = settings["cam{}".format(id)]
-                if "stream_resolution" in cam_settings:
-                    config = cameras[id].create_video_configuration(
-                        main={"size": cam_settings["resolution"]},
-                        lores={"size": cam_settings["stream_resolution"]},
-                        encode="lores"  # loresストリームをエンコード対象に
-                    )
-                else:
-                    config = cameras[id].create_video_configuration(
-                        main={"size": cam_settings["resolution"]}
-                    )
-                cameras[id].configure(config)
+                cameras[id].configure(cameras[id].create_video_configuration(main={"size": settings["cam{}".format(id)]["resolution"]}))
                 cameras[id].set_controls(settings["cam{}".format(id)]["controls"])
                 cameras[id].start_recording(MJPEGEncoder(), FileOutput(camera_outputs[id]))
                 if "focusControls" in settings["cam{}".format(id)]: # only set focus controls if they are present
