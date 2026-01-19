@@ -7,6 +7,8 @@ import warnings
 import time 
 import queue
 
+from collections import deque
+
 # カメラのIPアドレスとポート番号を設定
 IP = "192.168.1.120"
 PORT = "8000"
@@ -164,6 +166,94 @@ class GETTactileStream:
     def _reset(self):
         self._ref_frame = None
 
+    ### 2026-01-19 #### 接触検出器クラス（固定閾値法） ###
+    class ContactDetector:
+        """
+        固定閾値法による接触検出クラス。
+        
+        処理フロー:
+          1. 最初のn0_framesで基準画像I0を構築
+          2. エネルギーE > threshold なら CONTACT と判定
+        """
+        # 状態定数
+        INITIALIZING = "INITIALIZING"
+        CONTACT = "CONTACT"
+        NON_CONTACT = "NON_CONTACT"
+
+        def __init__(self, parent, n0_frames=10, threshold=0.02, roi=None, ksize=11, sigma=0.0):
+            self.parent = parent
+            self.n0_frames = n0_frames
+            self.threshold = threshold
+            self.roi = roi  # (x, y, w, h) or None
+            self.ksize = ksize
+            self.sigma = sigma
+
+            self._I0_bgr = None  # 基準画像
+            self._ref_accum = []  # I0構築用バッファ
+            self._frame_idx = -1
+            self._state = self.INITIALIZING
+
+        @property
+        def state(self):
+            return self._state
+
+        def _crop_roi(self, frame):
+            if self.roi is None:
+                return frame
+            x, y, w, h = self.roi
+            return frame[y:y+h, x:x+w]
+
+        def _compute_energy(self, frame_bgr):
+            """差分画像からエネルギー値を計算"""
+            diff = self.parent.calc_diff_gray(self._I0_bgr, frame_bgr,
+                                              ksize=self.ksize, sigma=self.sigma)
+            return float(np.mean(np.abs(diff - 0.5))) if diff is not None else None
+
+        def update(self, frame_bgr):
+            """
+            1フレームを処理し、接触状態を判定する。
+            
+            Returns:
+                (state, energy) - state: INITIALIZING/CONTACT/NON_CONTACT
+            """
+            self._frame_idx += 1
+
+            if frame_bgr is None:
+                return self._state, None
+
+            frame_bgr = self._crop_roi(frame_bgr)
+
+            # 基準画像の構築フェーズ
+            if self._I0_bgr is None:
+                self._ref_accum.append(frame_bgr.astype(np.float32))
+                if len(self._ref_accum) >= self.n0_frames:
+                    I0 = np.mean(np.stack(self._ref_accum, axis=0), axis=0)
+                    self._I0_bgr = I0.astype(np.uint8)
+                    self._ref_accum = []  # メモリ解放
+                return self.INITIALIZING, None
+
+            # エネルギー計算と判定
+            E = self._compute_energy(frame_bgr)
+            if E is None:
+                return self._state, None
+
+            self._state = self.CONTACT if E > self.threshold else self.NON_CONTACT
+            return self._state, E
+
+    def init_contact_detector(self, n0_frames=10, threshold=0.02, roi=None, ksize=11, sigma=0.0):
+        """固定閾値法の接触検出器を初期化"""
+        self._contact_detector = self.ContactDetector(
+            parent=self,
+            n0_frames=n0_frames,
+            threshold=threshold,
+            roi=roi,
+            ksize=ksize,
+            sigma=sigma,
+        )
+        return self._contact_detector
+    
+    ###
+
     #--- 動画キャプチャオープン ---
     #--- 2026-01-16 loreで640x480で受け取るようにimaging_driver側を修正 ---
     def _open_capture(self, url):
@@ -175,7 +265,7 @@ class GETTactileStream:
         return cap
     
     # --- diff計算 ---
-    def _calc_diff_gray(self, ref_bgr, img_bgr, ksize=11, sigma=0):
+    def calc_diff_gray(self, ref_bgr, img_bgr, ksize=11, sigma=0):
         if ref_bgr is None or img_bgr is None:
             return None
 
@@ -188,7 +278,7 @@ class GETTactileStream:
         return diff_img
     
     # --- diff計算 RGB版 ---    
-    def _calc_diff_rgb(self, ref_bgr, img_bgr, ksize=11, sigma=0):
+    def calc_diff_rgb(self, ref_bgr, img_bgr, ksize=11, sigma=0):
         if ref_bgr is None or img_bgr is None:
             return None
 
@@ -204,42 +294,59 @@ class GETTactileStream:
 
         reader = FrameReader(cap)
         reader.start()
-        
-        saver = AsyncAviSaver(out_path="./videos/tactile_stream.avi", fps=30.0, fourcc = "MJPG", max_queue = 128, drop_if_full=True, resize_to = None).start()
+
+        saver = AsyncAviSaver(out_path="./videos/tactile_stream.avi", fps=30.0, fourcc="MJPG").start()
 
         self._reset()
+
+        # 接触検出器の初期化（固定閾値法）
+        detector = self.init_contact_detector(
+            n0_frames=10,
+            threshold=0.006,  # 要調整
+            roi=None,
+            ksize=11,
+            sigma=0.0,
+        )
+
+        prev_state = None
         print("Streaming...")
         while True:
             ret, frame = reader.read()
             if not ret or frame is None:
                 time.sleep(0.005)
                 continue
-            
-            saver.write(frame)
 
-            # 初回参照フレーム
-            if self._ref_frame is None:
-                self._ref_frame = frame.copy()
+            #saver.write(frame)
+
+            # 接触状態を判定
+            state, energy = detector.update(frame)
+            if state != prev_state:
+                if state == detector.CONTACT:
+                    print("CONTACT")
+                elif state == detector.NON_CONTACT:
+                    print("NON_CONTACT")
+                prev_state = state
 
             if plot:
                 cv2.imshow("raw_RGB", frame)
 
-            diff_rgb = None
             if plot_diff:
-                diff_rgb = self._calc_diff_rgb(self._ref_frame, frame, ksize=11, sigma=0)
-
-            if plot_diff and diff_rgb is not None:
-                diff_vis = np.clip(diff_rgb * 255.0, 0, 255).astype(np.uint8)
-                cv2.imshow("diff_rgb", diff_vis)
+                # 参照フレームは display 用に使うならOKだが、検出器は自前I0を持つ
+                if self._ref_frame is None:
+                    self._ref_frame = frame.copy()
+                diff_rgb = self.calc_diff_rgb(self._ref_frame, frame, ksize=11, sigma=0)
+                if diff_rgb is not None:
+                    diff_vis = np.clip(diff_rgb * 255.0, 0, 255).astype(np.uint8)
+                    cv2.imshow("diff_rgb", diff_vis)
 
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
                 break
             if key == ord("r"):
-                # 参照フレーム更新（照明変動対策）
+                # display用参照更新（接触検出器のI0には影響しない）
                 self._ref_frame = frame.copy()
-                
-        saver.close()
+
+        #saver.close()
         reader.stop()
         cap.release()
         cv2.destroyAllWindows()

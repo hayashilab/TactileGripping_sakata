@@ -1,0 +1,19 @@
+[Unit]
+Description=Imaging Camera Server
+After=multi-user.target network.target ws2812.service
+Requires=ws2812.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/hayashi-rpi/imaging_driver/run.py
+WorkingDirectory=/home/hayashi-rpi/imaging_driver
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+User=hayashi-rpi
+
+[Install]
+WantedBy=multi-user.target

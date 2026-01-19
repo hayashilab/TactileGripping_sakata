@@ -1,0 +1,19 @@
+[Unit]
+Description=WS2812 LED Controller
+After=multi-user.target
+PartOf=run_imaging.service
+
+[Service]
+Type=simple
+ExecStart=/home/hayashi-rpi/venvs/ws2812/bin/python /home/hayashi-rpi/imaging_driver/ws2812.py
+ExecStopPost=/home/hayashi-rpi/venvs/ws2812/bin/python /home/hayashi-rpi/imaging_driver/ws2812_turn_off.py
+WorkingDirectory=/home/hayashi-rpi/imaging_driver
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

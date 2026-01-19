@@ -47,7 +47,7 @@ for cam in camera_info:
                 "AeEnable": False,
                 "AnalogueGain": 2,
                 "ExposureTime": 20000,
-                "FrameDurationLimits": (30000, 30000),
+                "FrameDurationLimits": (33333, 33333),  # 30fps固定 (1秒/30 = 33333μs)
                 "AwbEnable": False,
                 "ColourGains": (1.9, 2.5),
             },
@@ -341,11 +341,33 @@ def video_feed(id=0):
     if "cam{}".format(id) not in settings:
         return Response("Invalid camera id", status=400)
     def generate_frame(cam_id):
+        frame_count = 0
+        last_log_time = time.time()
+        last_frame_time = time.time()
+        fps_sum = 0.0
         while True:
             # wait until the lock is acquired
             with camera_outputs[cam_id].condition:
                 camera_outputs[cam_id].condition.wait()
                 frame = camera_outputs[cam_id].frame
+            
+            # フレームレート計測
+            current_time = time.time()
+            frame_interval = current_time - last_frame_time
+            if frame_interval > 0:
+                instant_fps = 1.0 / frame_interval
+                fps_sum += instant_fps
+            last_frame_time = current_time
+            frame_count += 1
+            
+            # 5秒ごとにログ出力
+            if current_time - last_log_time >= 5.0:
+                avg_fps = fps_sum / frame_count if frame_count > 0 else 0
+                print(f"[Camera {cam_id}] Average FPS: {avg_fps:.2f} Hz (frames: {frame_count})")
+                frame_count = 0
+                fps_sum = 0.0
+                last_log_time = current_time
+            
             # yield the output frame in the byte format
             yield (
                 b"--frame\r\n"

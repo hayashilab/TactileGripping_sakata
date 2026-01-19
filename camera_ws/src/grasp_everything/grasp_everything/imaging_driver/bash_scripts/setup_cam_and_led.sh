@@ -8,41 +8,60 @@ VENV_PY="/home/hayashi-rpi/venvs/ws2812/bin/python"
 LED_PY="/home/hayashi-rpi/imaging_driver/ws2812.py"
 
 LED_LOG="/tmp/ws2812.log"
+LED_PID_FILE="/tmp/ws2812.pid"
 
 log() {
-  # 例: 2025-12-29 14:23:10 [INFO] message
   printf "%(%F %T)T [%s] %s\n" -1 "${1:-INFO}" "${2:-}"
 }
 
 start_led() {
-  # root側で起動して “本体PID” をechoする（sudoのPIDではない）
-  sudo bash -c "nohup '$VENV_PY' '$LED_PY' >>'$LED_LOG' 2>&1 & echo \$!"
+  # rootで起動してPIDをファイルに保存（nohupを削除）
+  sudo bash -c "'$VENV_PY' '$LED_PY' >>'$LED_LOG' 2>&1 & echo \$! > '$LED_PID_FILE'"
+  sleep 0.5
+  if [[ -f "$LED_PID_FILE" ]]; then
+    cat "$LED_PID_FILE"
+  else
+    echo ""
+  fi
 }
 
 stop_led() {
-  if [[ -n "${LED_PID:-}" ]] && sudo kill -0 "$LED_PID" 2>/dev/null; then
-    log INFO "Stopping LED (pid=$LED_PID) ..."
-    sudo kill -INT "$LED_PID" 2>/dev/null || true
-    sleep 0.2
-    if sudo kill -0 "$LED_PID" 2>/dev/null; then
+  local pid="${LED_PID:-}"
+  
+  # PIDファイルからも取得を試みる
+  if [[ -z "$pid" ]] && [[ -f "$LED_PID_FILE" ]]; then
+    pid="$(cat "$LED_PID_FILE" 2>/dev/null || true)"
+  fi
+  
+  # プロセス名でも検索（フォールバック）
+  if [[ -z "$pid" ]] || ! sudo kill -0 "$pid" 2>/dev/null; then
+    pid="$(pgrep -f 'python.*ws2812.py' 2>/dev/null | head -1 || true)"
+  fi
+  
+  if [[ -n "$pid" ]] && sudo kill -0 "$pid" 2>/dev/null; then
+    log INFO "Stopping LED (pid=$pid) ..."
+    sudo kill -INT "$pid" 2>/dev/null || true
+    sleep 0.3
+    if sudo kill -0 "$pid" 2>/dev/null; then
       log WARN "LED still running; sending SIGTERM ..."
-      sudo kill -TERM "$LED_PID" 2>/dev/null || true
+      sudo kill -TERM "$pid" 2>/dev/null || true
     fi
-    sleep 0.2
-    if sudo kill -0 "$LED_PID" 2>/dev/null; then
+    sleep 0.3
+    if sudo kill -0 "$pid" 2>/dev/null; then
       log WARN "LED still running; sending SIGKILL ..."
-      sudo kill -KILL "$LED_PID" 2>/dev/null || true
+      sudo kill -KILL "$pid" 2>/dev/null || true
     fi
     log INFO "LED stopped."
   else
-    log INFO "LED already stopped."
+    log INFO "LED already stopped or not found."
   fi
+  
+  # PIDファイル削除
+  sudo rm -f "$LED_PID_FILE" 2>/dev/null || true
 }
 
 on_int() {
   log INFO "Ctrl+C detected. Shutting down camera server and LED..."
-  # run.py は前面で動いているので、ここでは何もしなくても SIGINT は run.py に入る
-  # ただし、trapが先に動いてしまう環境もあるので、明示的に続行してEXITへ
 }
 
 cleanup() {

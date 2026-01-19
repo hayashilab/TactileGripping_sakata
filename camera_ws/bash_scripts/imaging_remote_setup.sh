@@ -16,4 +16,5 @@ if [[ ! -f "$KEY" ]]; then
 fi
 
 # 既知ホスト確認で止まるのが嫌なら StrictHostKeyChecking を調整してください
-ssh -i "$KEY" -p "$PORT" "${USER}@${HOST}" -- "$REMOTE_CMD"
+# -t: TTYを割り当てることでCtrl+C (SIGINT) がリモートに正しく伝わる
+ssh -t -i "$KEY" -p "$PORT" "${USER}@${HOST}" -- "$REMOTE_CMD"
