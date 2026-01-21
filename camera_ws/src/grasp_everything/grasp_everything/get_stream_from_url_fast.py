@@ -302,7 +302,7 @@ class GETTactileStream:
         # 接触検出器の初期化（固定閾値法）
         detector = self.init_contact_detector(
             n0_frames=10,
-            threshold=0.0075,  # 要調整　0.006- 2026-01-19 これをランダムに調整して学習用データを取るのもあり
+            threshold=0.0075,  # 要調整　0.0075- 2026-01-19 これをランダムに調整して学習用データを取るのもあり
             roi=None,
             ksize=11,
             sigma=0.0,
