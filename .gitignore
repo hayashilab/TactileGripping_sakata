@@ -18,6 +18,7 @@ document/2025/Research/asset/videos/
 
 # video
 camera_ws/src/GraspEverything/videos/
+camera_ws/dataset/
 
 camera_ws/src/calib_c920
 camera_ws/src/grasp_everything/grasp_everything/agents/

@@ -5,9 +5,9 @@
 import rclpy
 from rclpy.node import Node
 from .motor_control import STEP_CONTROL # Importing a class called STEP_CONTROL from a file named motor_control.py in the same folder (likely this is your low-level motor interface).
-from std_msgs.msg import Int32
+from std_msgs.msg import Int32, String
 from std_srvs.srv import Empty
-from std_srvs.srv import Trigger
+from std_srvs.srv import Trigger, SetBool
 # common
 from scipy.interpolate import InterpolatedUnivariateSpline # This helps convert distances in millimeters to motor steps using interpolation.
 
@@ -38,6 +38,31 @@ class GripperControl(Node):
         )
         
         self.encoder_srv = self.create_service(Trigger, 'gripper/read_encoder', self.readEncoderCallback)
+
+        # ---- Auto control service (contact-based) ----
+        self.auto_control_srv = self.create_service(
+            SetBool,
+            'gripper/auto_control',
+            self.autoControlCallback
+        )
+        self._auto_control_enabled = False
+        self._contact_state = "INITIALIZING"
+
+        # Subscribe to contact state from tactile node
+        self.subscription_contact = self.create_subscription(
+            String,
+            '/tactile/contact_state',
+            self.contactStateCallback,
+            10
+        )
+
+        # Publisher for current gripper step (for tactile node logging)
+        self.pub_current_step = self.create_publisher(Int32, '/gripper/current_step', 10)
+
+        # Auto control parameters
+        self._auto_step_increment = 500  # step increment per cycle when closing
+        self._auto_close_limit = -41000  # maximum close position (steps)
+        self._auto_open_position = -1000  # open position (steps)
 
         # Motor control settings
         self.speed = 1000
@@ -71,6 +96,60 @@ class GripperControl(Node):
 
      
         self.mm2step_gripper = InterpolatedUnivariateSpline(x, y, k=5, check_finite=False)
+
+        # Timer for auto control (10Hz)
+        self._auto_control_timer = self.create_timer(0.1, self._auto_control_loop)
+
+    def contactStateCallback(self, msg: String):
+        """Callback for contact state from tactile node"""
+        self._contact_state = msg.data
+
+    def autoControlCallback(self, request, response):
+        """Enable/disable auto control based on contact state"""
+        if request.data:
+            # Enable auto control
+            self._auto_control_enabled = True
+            # Start from open position
+            self.previous_cmd_pose = self._auto_open_position
+            response.success = True
+            response.message = "Auto control enabled. Gripper will close until contact."
+            self.get_logger().info("Auto control ENABLED")
+        else:
+            # Disable auto control
+            self._auto_control_enabled = False
+            response.success = True
+            response.message = "Auto control disabled."
+            self.get_logger().info("Auto control DISABLED")
+        return response
+
+    def _auto_control_loop(self):
+        """Auto control loop: close on NON_CONTACT, stop on CONTACT"""
+        # Publish current step for tactile node
+        step_msg = Int32()
+        step_msg.data = self.previous_cmd_pose
+        self.pub_current_step.publish(step_msg)
+
+        if not self._auto_control_enabled:
+            return
+
+        if self._contact_state == "INITIALIZING":
+            # Wait for detector to initialize
+            return
+
+        if self._contact_state == "NON_CONTACT":
+            # Close gripper incrementally
+            new_step = self.previous_cmd_pose - self._auto_step_increment
+            new_step = max(new_step, self._auto_close_limit)  # Don't exceed limit
+
+            if new_step != self.previous_cmd_pose:
+                pose_msg = Int32()
+                pose_msg.data = new_step
+                self.gripperPoseInStepCallback(pose_msg)
+                self.get_logger().info(f"Auto: Closing to {new_step}")
+
+        elif self._contact_state == "CONTACT":
+            # Stop - do nothing, gripper stays at current position
+            self.get_logger().info("Auto: CONTACT detected - stopping", throttle_duration_sec=1.0)
 
     def readEncoderCallback(self, request, response):
         value, ret = self.step_control.readEncoderValue()
