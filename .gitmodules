@@ -4,6 +4,3 @@
 [submodule "camera_ws/src/apriltag_msgs"]
 	path = camera_ws/src/apriltag_msgs
 	url = https://github.com/christianrauch/apriltag_msgs.git
-[submodule "camera_ws/src/worksp/camera_ws/src/realsense-ros"]
-	path = camera_ws/src/worksp/camera_ws/src/realsense-ros
-	url = https://github.com/realsenseai/realsense-ros.git
