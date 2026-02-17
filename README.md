@@ -177,4 +177,4 @@ ls -l /dev/FT232R_gripper
 ---
 
 その他の情報はdocument/2025/Researchにまとめています。
-Cadファイルなどは[Onshape](https://cad.onshape.com/documents/9a01cb18827afc23df61d956/w/22e798bb93dee9ab0cdcc348/e/33dd1a345062008ad6b48713?renderMode=0&uiState=699417f29e3005ec0ca43e23)
+Cadファイルなどは[Onshape-MyGripper](https://cad.onshape.com/documents/9a01cb18827afc23df61d956/w/22e798bb93dee9ab0cdcc348/e/33dd1a345062008ad6b48713?renderMode=0&uiState=6994188b9e3005ec0ca43f3c)
