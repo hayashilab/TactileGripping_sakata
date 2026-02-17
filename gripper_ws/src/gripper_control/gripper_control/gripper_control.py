@@ -1,80 +1,162 @@
 #!/usr/bin/env python3
 # gripper_control.py
+#
+# - close_until_contact: motor_control.STEP_CONTROL.tighten_until() で締め続け、CONTACTで停止
+# - push_after_contact: CONTACT停止後に weak/mid/strong の押し込み（相対パルス）を追加実行
+# - stop_close: close/push の両方を停止
+#
+# 前提:
+#   motor_control.py の STEP_CONTROL に tighten_until(stop_check, rpm, step, ...) が実装済み
+#   例: 以前提示した tighten_until を追加済みであること
+#
+#改良版
+#`ros2 run gripper_control gripper_control --ros-args -p stop_on_contact:=true`
 
+#ゼロ合わせ（任意）：
+
+#`ros2 service call /gripper/set_zero std_srvs/srv/Empty {}`
+
+#締め続け開始（CONTACTで止まる）：
+
+#`ros2 service call /gripper/close_until_contact std_srvs/srv/Trigger`
+
+#手動停止：
+
+#`ros2 service call /gripper/stop_close std_srvs/srv/Trigger`
+################################################################################################
+
+import threading
+import time
 
 import rclpy
 from rclpy.node import Node
-from .motor_control import STEP_CONTROL # Importing a class called STEP_CONTROL from a file named motor_control.py in the same folder (likely this is your low-level motor interface).
-from std_msgs.msg import Int32, String
-from std_srvs.srv import Empty
-from std_srvs.srv import Trigger, SetBool
-# common
-from scipy.interpolate import InterpolatedUnivariateSpline # This helps convert distances in millimeters to motor steps using interpolation.
+
+from .motor_control import STEP_CONTROL
+
+from std_msgs.msg import Int32, Float32, String
+from std_srvs.srv import Empty, Trigger
+
+from scipy.interpolate import InterpolatedUnivariateSpline
+
 
 class GripperControl(Node):
     def __init__(self):
         super().__init__('gripper_control')
-        
-        # Create subscriptions
-        self.subscription_step = self.create_subscription(
+
+        # ----------------------------
+        # Parameters
+        # ----------------------------
+        self.com_port = str(self.declare_parameter("com_port", "/dev/ttyUSB_Gripper").value)
+        self.baudrate = int(self.declare_parameter("baudrate", 9600).value)
+
+        # moveToEncoder settings
+        self.speed = int(self.declare_parameter("speed", 10).value)
+        self.cmd_timeout = int(self.declare_parameter("cmd_timeout", 10).value)
+        self.encoder_tolerance = int(self.declare_parameter("encoder_tolerance", 50).value)
+        self.encoder_per_pulse = float(self.declare_parameter("encoder_per_pulse", 20.09).value)
+
+        # contact
+        self.stop_on_contact = bool(self.declare_parameter("stop_on_contact", True).value)
+        self.contact_state_topic = str(self.declare_parameter("contact_state_topic", "/tactile/contact_state").value)
+        self._prev_contact_state = None
+        self.subscription_contact_state = None
+
+        # start-up behavior
+        self.move_to_mm_max_on_start = bool(self.declare_parameter("move_to_mm_max_on_start", True).value)
+
+        # close-until-contact settings (delegated to motor_control.tighten_until)
+        self.close_speed = int(self.declare_parameter("close_speed", 10).value)                 # rpm
+        self.close_step_pulses = int(self.declare_parameter("close_step_pulses", 2).value)     # pulses per command
+        self.close_direction = int(self.declare_parameter("close_direction", 1).value)          # +1/-1 (閉じ方向)
+        self.close_max_pulses = int(self.declare_parameter("close_max_pulses", 900).value)      # safety (abs sum)
+        self.close_sleep_margin_s = float(self.declare_parameter("close_sleep_margin_s", 0.002).value)
+
+        # setZero settings
+        self.set_zero_step = int(self.declare_parameter("set_zero_step", -50).value)
+        self.set_zero_rpm = int(self.declare_parameter("set_zero_rpm", 10).value)
+
+        # ----------------------------
+        # Push-after-contact settings
+        # ----------------------------
+        self.auto_push_after_contact = bool(self.declare_parameter("auto_push_after_contact", True).value)
+        self.push_strength = str(self.declare_parameter("push_strength", "weak").value)  # weak/mid/strong
+
+        self.push_rpm = int(self.declare_parameter("push_rpm", 10).value)
+        self.push_weak_pulses = int(self.declare_parameter("push_weak_pulses", 20).value)
+        self.push_mid_pulses = int(self.declare_parameter("push_mid_pulses", 40).value)
+        self.push_strong_pulses = int(self.declare_parameter("push_strong_pulses", 60).value)
+
+        # safety clamp for push
+        self.push_max_pulses = int(self.declare_parameter("push_max_pulses", 200).value)
+        self.push_sleep_margin_s = float(self.declare_parameter("push_sleep_margin_s", 0.01).value)
+
+        # ----------------------------
+        # Timed close settings
+        # ----------------------------
+        self.timed_close_duration = float(self.declare_parameter("timed_close_duration", 3.0).value)
+        self.timed_close_rpm = int(self.declare_parameter("timed_close_rpm", 10).value)
+
+        # ----------------------------
+        # Internal state
+        # ----------------------------
+        self._closing_active = False
+        self._pushing_active = False
+        self._contacted = False
+
+        # IMPORTANT: close/push で Event を分離する（CONTACT後のpushが即returnしないため）
+        self._close_stop_event = threading.Event()
+        self._push_stop_event = threading.Event()
+
+        self._close_thread = None
+        self._push_thread = None
+
+        # ----------------------------
+        # ROS I/F: Subscriptions
+        # ----------------------------
+        self.subscription_encoder = self.create_subscription(
             Int32,
-            'gripper/gripper_pose_in_step',
-            self.gripperPoseInStepCallback,
+            'gripper/gripper_pose_in_encoder',
+            self.gripperPoseInEncoderCallback,
             10
         )
-        
+
         self.subscription_mm = self.create_subscription(
-            Int32,
+            Float32,
             'gripper/gripper_pose_in_mm',
             self.gripperPoseInMMCallback,
             10
         )
-        
-        # Create service
-        self.srv = self.create_service(
-            Empty,
-            'gripper/set_zero',
-            self.setZeroCallBack
-        )
-        
-        self.encoder_srv = self.create_service(Trigger, 'gripper/read_encoder', self.readEncoderCallback)
 
-        # ---- Auto control service (contact-based) ----
-        self.auto_control_srv = self.create_service(
-            SetBool,
-            'gripper/auto_control',
-            self.autoControlCallback
-        )
-        self._auto_control_enabled = False
-        self._contact_state = "INITIALIZING"
+        # ----------------------------
+        # ROS I/F: Services
+        # ----------------------------
+        self.srv_set_zero = self.create_service(Empty, 'gripper/set_zero', self.setZeroCallBack)
+        self.srv_read_encoder = self.create_service(Trigger, 'gripper/read_encoder', self.readEncoderCallback)
 
-        # Subscribe to contact state from tactile node
-        self.subscription_contact = self.create_subscription(
-            String,
-            '/tactile/contact_state',
-            self.contactStateCallback,
-            10
+        # close until contact
+        self.srv_close_until_contact = self.create_service(
+            Trigger, 'gripper/close_until_contact', self.closeUntilContactCallback
+        )
+        self.srv_stop_close = self.create_service(
+            Trigger, 'gripper/stop_close', self.stopCloseCallback
         )
 
-        # Publisher for current gripper step (for tactile node logging)
-        self.pub_current_step = self.create_publisher(Int32, '/gripper/current_step', 10)
+        # manual push services
+        self.srv_push_weak = self.create_service(Trigger, 'gripper/push_weak', self.pushWeakCallback)
+        self.srv_push_mid = self.create_service(Trigger, 'gripper/push_mid', self.pushMidCallback)
+        self.srv_push_strong = self.create_service(Trigger, 'gripper/push_strong', self.pushStrongCallback)
 
-        # Auto control parameters
-        self._auto_step_increment = 500  # step increment per cycle when closing
-        self._auto_close_limit = -41000  # maximum close position (steps)
-        self._auto_open_position = -1000  # open position (steps)
+        # timed close service
+        self.srv_close_for_duration = self.create_service(
+            Trigger, 'gripper/close_for_duration', self.closeForDurationCallback
+        )
 
-        # Motor control settings
-        self.speed = 1000
-        self.previous_cmd_pose = -1000000 # previous_cmd_pose: remembers the last position (to avoid sending duplicates)
-        self.cmd_timeout = 10
-        self.com_port = "/dev/ttyUSB_Gripper" # USB serial port used to communicate with the gripper
-        self.baudrate = 9600
-        
-        # Initialize motor control
+        # ----------------------------
+        # Motor control init
+        # ----------------------------
         self.step_control = STEP_CONTROL(com_port=self.com_port, baudrate=self.baudrate)
         self.open()
-        
+
         # Print motor status
         self.get_logger().info(f'encoder value: {self.step_control.readEncoderValue()}')
         self.get_logger().info(f'Pulse received: {self.step_control.readReceivedPulses()}')
@@ -83,74 +165,72 @@ class GripperControl(Node):
         self.get_logger().info(f'en pin: {self.step_control.readEnPinStatus()}')
         self.get_logger().info(f'shaft status: {self.step_control.readShaftStatus()}')
 
+        if self.stop_on_contact:
+            self._ensure_contact_subscription()
+            self.get_logger().info(f"Stop on CONTACT enabled: {self.contact_state_topic}")
 
+        # ----------------------------
+        # Calibration (mm -> encoder)
+        # ----------------------------
+        x = [10.0, 21.0, 38.3, 51.6, 68.0]
+        y = [35284, 33111, 25747, 23709, 21218]
+        k = min(3, len(x) - 1)
+        self.mm2encoder_gripper = InterpolatedUnivariateSpline(x, y, k=k, check_finite=False)
 
-############################ MANUAL CALLIBRATION ###################################
+        self.encoder_min = 21218   # OPEN
+        self.encoder_max = 35284   # CLOSE
+        self.mm_min = 10.0
+        self.mm_max = 68.0
 
+        if self.move_to_mm_max_on_start:
+            self.get_logger().info("起動時にmm_minへ移動します（ゼロ位置調整）")
+            self._move_to_mm(self.mm_min)
 
-        # mm increasing (SciPy requirement)
-        x = [23, 34, 46, 51, 56, 63, 75, 80, 90, 100]
+    # ----------------------------
+    # Helpers
+    # ----------------------------
+    def _ensure_contact_subscription(self):
+        if self.subscription_contact_state is None:
+            self.subscription_contact_state = self.create_subscription(
+                String,
+                self.contact_state_topic,
+                self.contactStateCallback,
+                10
+            )
 
-        # steps corrected: 23mm → -35000 (CLOSE), 100mm → -1000 (OPEN)
-        y = [-35000, -32000, -30000, -25000, -20000, -15000, -10000, -7000, -4000, -1000]
+    def open(self):
+        ret = self.step_control.open()
+        if not ret:
+            raise RuntimeError("Com Port Error: cannot open motor controller")
+        self.get_logger().info(f'En pin: {self.step_control.setEnablePin(True)}')
 
-     
-        self.mm2step_gripper = InterpolatedUnivariateSpline(x, y, k=5, check_finite=False)
+    def _stop_all_motion(self, reason: str):
+        if self._closing_active or self._pushing_active:
+            self.get_logger().info(f"Stopping motion: {reason}")
 
-        # Timer for auto control (10Hz)
-        self._auto_control_timer = self.create_timer(0.1, self._auto_control_loop)
+        # stop flags
+        self._close_stop_event.set()
+        self._push_stop_event.set()
 
-    def contactStateCallback(self, msg: String):
-        """Callback for contact state from tactile node"""
-        self._contact_state = msg.data
+        # motor stop
+        self.step_control.stopMotor()
 
-    def autoControlCallback(self, request, response):
-        """Enable/disable auto control based on contact state"""
-        if request.data:
-            # Enable auto control
-            self._auto_control_enabled = True
-            # Start from open position
-            self.previous_cmd_pose = self._auto_open_position
-            response.success = True
-            response.message = "Auto control enabled. Gripper will close until contact."
-            self.get_logger().info("Auto control ENABLED")
-        else:
-            # Disable auto control
-            self._auto_control_enabled = False
-            response.success = True
-            response.message = "Auto control disabled."
-            self.get_logger().info("Auto control DISABLED")
-        return response
+        self._closing_active = False
+        self._pushing_active = False
 
-    def _auto_control_loop(self):
-        """Auto control loop: close on NON_CONTACT, stop on CONTACT"""
-        # Publish current step for tactile node
-        step_msg = Int32()
-        step_msg.data = self.previous_cmd_pose
-        self.pub_current_step.publish(step_msg)
+    def _strength_to_pulses(self, strength: str) -> int:
+        s = (strength or "").strip().lower()
+        if s == "weak":
+            return self.push_weak_pulses
+        if s == "mid":
+            return self.push_mid_pulses
+        if s == "strong":
+            return self.push_strong_pulses
+        return self.push_weak_pulses
 
-        if not self._auto_control_enabled:
-            return
-
-        if self._contact_state == "INITIALIZING":
-            # Wait for detector to initialize
-            return
-
-        if self._contact_state == "NON_CONTACT":
-            # Close gripper incrementally
-            new_step = self.previous_cmd_pose - self._auto_step_increment
-            new_step = max(new_step, self._auto_close_limit)  # Don't exceed limit
-
-            if new_step != self.previous_cmd_pose:
-                pose_msg = Int32()
-                pose_msg.data = new_step
-                self.gripperPoseInStepCallback(pose_msg)
-                self.get_logger().info(f"Auto: Closing to {new_step}")
-
-        elif self._contact_state == "CONTACT":
-            # Stop - do nothing, gripper stays at current position
-            self.get_logger().info("Auto: CONTACT detected - stopping", throttle_duration_sec=1.0)
-
+    # ----------------------------
+    # Services
+    # ----------------------------
     def readEncoderCallback(self, request, response):
         value, ret = self.step_control.readEncoderValue()
         if ret == 1:
@@ -160,79 +240,321 @@ class GripperControl(Node):
             response.success = False
             response.message = "Failed to read encoder"
         return response
-        
-    def open(self):
-        """Open serial connection to motor controller"""
-        ret = self.step_control.open()
-        if not ret:
-            self.get_logger().error("Com Port Error")
-            exit()
-        self.get_logger().info(f'En pin: {self.step_control.setEnablePin(True)}')
-        
+
+    def setZeroCallBack(self, request, response):
+        # 競合回避：動作中は止めてから実施
+        if self._closing_active or self._pushing_active:
+            self._stop_all_motion("set_zero called during motion")
+
+        self.get_logger().info(f"Set Zero: {self.step_control.setZero(self.set_zero_step, self.set_zero_rpm)}")
+        self.get_logger().info(f'encoder value: {self.step_control.readEncoderValue()}')
+        return response
+
+    def closeUntilContactCallback(self, request, response):
+        # close_until_contact は contact 監視が必須
+        if not self.stop_on_contact:
+            self.stop_on_contact = True
+            self._ensure_contact_subscription()
+            self.get_logger().info(f"Stop on CONTACT enabled (auto): {self.contact_state_topic}")
+
+        if self._closing_active:
+            response.success = True
+            response.message = "Already closing."
+            return response
+
+        # 既存動作があれば停止してから開始
+        if self._pushing_active:
+            self._stop_all_motion("start close_until_contact while pushing")
+
+        self._closing_active = True
+        self._contacted = False
+
+        # close 停止フラグは clear して開始
+        self._close_stop_event.clear()
+
+        signed_step = int(self.close_direction * self.close_step_pulses)
+        if signed_step == 0:
+            self._closing_active = False
+            response.success = False
+            response.message = "close_step_pulses is 0."
+            return response
+
+        self.get_logger().info(
+            f"close_until_contact start: rpm={self.close_speed}, step={signed_step}, "
+            f"max_abs_pulses={self.close_max_pulses}, margin={self.close_sleep_margin_s}s"
+        )
+
+        self._close_thread = threading.Thread(
+            target=self._close_worker,
+            args=(self.close_speed, signed_step, self.close_max_pulses, self.close_sleep_margin_s),
+            daemon=True
+        )
+        self._close_thread.start()
+
+        response.success = True
+        response.message = "Started closing until contact."
+        return response
+
+    def stopCloseCallback(self, request, response):
+        self._stop_all_motion("manual stop_close")
+        response.success = True
+        response.message = "Stopped."
+        return response
+
+    def pushWeakCallback(self, request, response):
+        ok, msg = self._start_push("weak")
+        response.success = bool(ok)
+        response.message = msg
+        return response
+
+    def pushMidCallback(self, request, response):
+        ok, msg = self._start_push("mid")
+        response.success = bool(ok)
+        response.message = msg
+        return response
+
+    def pushStrongCallback(self, request, response):
+        ok, msg = self._start_push("strong")
+        response.success = bool(ok)
+        response.message = msg
+        return response
+
+    def closeForDurationCallback(self, request, response):
+        """時間指定で締め続けるサービス"""
+        if self._closing_active or self._pushing_active:
+            response.success = False
+            response.message = "Already in motion."
+            return response
+
+        self._closing_active = True
+        self._close_stop_event.clear()
+
+        duration = self.timed_close_duration
+        rpm = self.timed_close_rpm
+        signed_step = int(self.close_direction * self.close_step_pulses)
+
+        self.get_logger().info(
+            f"close_for_duration start: rpm={rpm}, duration={duration}s, step={signed_step}"
+        )
+
+        self._close_thread = threading.Thread(
+            target=self._timed_close_worker,
+            args=(rpm, signed_step, duration),
+            daemon=True
+        )
+        self._close_thread.start()
+
+        response.success = True
+        response.message = f"Started closing for {duration}s at {rpm} rpm."
+        return response
+
+    # ----------------------------
+    # Workers
+    # ----------------------------
+    def _close_worker(self, rpm: int, step: int, max_pulses: int, margin_s: float):
+        try:
+            ret = self.step_control.tighten_until(
+                stop_check=self._close_stop_event.is_set,
+                rpm=rpm,
+                step=step,
+                max_abs_pulses=max_pulses,
+                sleep_margin_s=margin_s,
+            )
+
+            if ret == 1:
+                self.get_logger().info("close worker finished: stop flag/contact")
+            elif ret == 0:
+                self.get_logger().warn("close worker finished: reached max pulses (safety stop)")
+            else:
+                self.get_logger().warn(f"close worker finished: error ret={ret}")
+        finally:
+            self._closing_active = False
+
+    def _timed_close_worker(self, rpm: int, step: int, duration: float):
+        """指定時間だけ締め続けるワーカー"""
+        try:
+            self.step_control.setEnablePin(True)
+            end_time = time.time() + duration
+            total_pulses = 0
+
+            while time.time() < end_time:
+                if self._close_stop_event.is_set():
+                    self.get_logger().info("timed close interrupted by stop event")
+                    break
+
+                ret = self.step_control.setMotorRelativePose(rpm, step)
+                if ret != 1:
+                    self.get_logger().warn(f"timed close: setMotorRelativePose failed ret={ret}")
+                    break
+
+                total_pulses += abs(step)
+                delay = float(self.step_control.calDelayTime(rpm, step)) + self.close_sleep_margin_s
+                time.sleep(max(0.001, delay))
+
+            self.step_control.stopMotor()
+            self.get_logger().info(f"timed close finished: total_pulses={total_pulses}")
+        finally:
+            self._closing_active = False
+
+    def _start_push(self, strength: str):
+        if self._pushing_active:
+            return True, "Already pushing."
+
+        pulses = self._strength_to_pulses(strength)
+        pulses = int(max(0, min(int(pulses), int(self.push_max_pulses))))
+        if pulses == 0:
+            return False, "Push pulses is 0 (after clamp)."
+
+        signed_pulses = int(self.close_direction * pulses)
+
+        # push 停止フラグは clear して開始（CONTACTでcloseを止めてもpushが止まらない）
+        self._push_stop_event.clear()
+        self._pushing_active = True
+
+        self.get_logger().info(
+            f"push start: strength={strength}, rpm={self.push_rpm}, pulses={signed_pulses} "
+            f"(max={self.push_max_pulses})"
+        )
+
+        self._push_thread = threading.Thread(
+            target=self._push_worker,
+            args=(self.push_rpm, signed_pulses),
+            daemon=True
+        )
+        self._push_thread.start()
+        return True, "Push started."
+
+    def _push_worker(self, rpm: int, signed_pulses: int):
+        try:
+            if self._push_stop_event.is_set():
+                return
+
+            # 念のため enable
+            self.step_control.setEnablePin(True)
+
+            ret = self.step_control.setMotorRelativePose(rpm, signed_pulses)
+            if ret != 1:
+                self.get_logger().warn(f"push failed: setMotorRelativePose ret={ret}")
+                return
+
+            # 目安時間（途中停止可能なように分割sleep）
+            dt = float(self.step_control.calDelayTime(rpm, signed_pulses)) + float(self.push_sleep_margin_s)
+            end_t = time.time() + max(0.0, dt)
+
+            while time.time() < end_t:
+                if self._push_stop_event.is_set():
+                    self.step_control.stopMotor()
+                    self.get_logger().info("push interrupted by stop event")
+                    return
+                time.sleep(0.01)
+
+        finally:
+            self._pushing_active = False
+            self.get_logger().info("push finished")
+
+    # ----------------------------
+    # Topic callbacks
+    # ----------------------------
     def gripperPoseInMMCallback(self, data):
-        """Callback for gripper position in millimeters"""
-        data.data = min(data.data, 90)
-        pose_in_step = Int32()
-        pose_in_step.data = int(self.mm2step_gripper(data.data))
-        pose_in_step.data = max(pose_in_step.data, -41000)
-        self.gripperPoseInStepCallback(pose_in_step)
-        
-    def gripperPoseInStepCallback(self, data):
-        """Callback for gripper position in steps"""
-        self.get_logger().info(f'{data.data}')
-        
-        # Allow duplicate OPEN command (-1000 step)
-        if data.data == self.previous_cmd_pose and data.data != -10000:
+        if self._closing_active or self._pushing_active:
+            self.get_logger().warn("Ignoring mm command while motion is active.")
+            return
+        self._move_to_mm(float(data.data))
+
+    def _move_to_mm(self, target_mm: float):
+        target_mm = max(self.mm_min, min(target_mm, self.mm_max))
+        target_encoder = int(self.mm2encoder_gripper(target_mm))
+        target_encoder = max(self.encoder_min, min(target_encoder, self.encoder_max))
+
+        self.get_logger().info(f"目標: {target_mm}mm → encoder {target_encoder}")
+        self.moveToEncoder(target_encoder)
+
+    def gripperPoseInEncoderCallback(self, data):
+        if self._closing_active or self._pushing_active:
+            self.get_logger().warn("Ignoring encoder command while motion is active.")
+            return
+        target_encoder = max(self.encoder_min, min(int(data.data), self.encoder_max))
+        self.get_logger().info(f"目標エンコーダ: {target_encoder}")
+        self.moveToEncoder(target_encoder)
+
+    def contactStateCallback(self, msg: String):
+        state = msg.data.strip()
+        if state == "CONTACT" and self._prev_contact_state != "CONTACT":
+            self._contacted = True
+
+            # close worker 停止（closeだけ止める。pushは別Event）
+            self._close_stop_event.set()
+
+            # 即停止（慣性や通信遅延の吸収）
+            ret = self.step_control.stopMotor()
+            if ret == 1:
+                self.get_logger().info("CONTACT検出: stopMotor送信")
+            else:
+                self.get_logger().warn(f"CONTACT検出: stopMotor失敗 (ret={ret})")
+
+            self._closing_active = False
+
+            # CONTACT後 自動押し込み
+            if self.auto_push_after_contact:
+                ok, msg2 = self._start_push(self.push_strength)
+                if not ok:
+                    self.get_logger().warn(f"auto push skipped: {msg2}")
+
+        self._prev_contact_state = state
+
+    # ----------------------------
+    # Absolute move (kept)
+    # ----------------------------
+    def moveToEncoder(self, target_encoder: int):
+        current_encoder, ret = self.step_control.readEncoderValue()
+        if ret != 1:
+            self.get_logger().error("エンコーダ値の読み取りに失敗")
             return
 
-            
-        done = False
-        count = 0
-        while not done:
-            self.get_logger().info(f"Set stepper at {data.data}")
-            ret = self.step_control.setMotorAbsolutePose(self.speed, data.data)
-            if ret == 1:
-                done = True
-            count += 1
-            if count >= self.cmd_timeout:
-                break
-                
-        self.previous_cmd_pose = data.data
+        self.get_logger().info(f"現在: {current_encoder}, 目標: {target_encoder}")
 
-        # # 🟢 Read and print actual encoder feedback after move
-        # raw_value, ret = self.step_control.readEncoderValue()
-        # if ret == 1:
-        #     self.get_logger().info(f"👉 Actual encoder after move = {raw_value}")
-        # else:
-        #     self.get_logger().warn("❌ Failed to read encoder after move")
-        
-    def setZeroCallBack(self, request, response):
-        """Service callback to set zero position"""
-        self.get_logger().info(f"Set Zero: {self.step_control.setZero(-50, 50)}") # if wanna reserve set zero rotation, put 50, 50
-        self.get_logger().info(f'encoder value: {self.step_control.readEncoderValue()}')
-        self.previous_cmd_pose = 0
-        return response
-        
+        diff = target_encoder - current_encoder
+        if abs(diff) < self.encoder_tolerance:
+            self.get_logger().info("すでに目標位置にいます")
+            return
+
+        step_to_move = int(diff / self.encoder_per_pulse)
+        self.get_logger().info(f"移動量: encoder {diff} → step(pulses) {step_to_move}")
+
+        current_pulses, ret = self.step_control.readReceivedPulses()
+        if ret != 1:
+            self.get_logger().error("パルス値の読み取りに失敗")
+            return
+
+        target_pulses = current_pulses + step_to_move
+
+        for attempt in range(self.cmd_timeout):
+            ret = self.step_control.setMotorAbsolutePose(self.speed, target_pulses)
+            if ret == 1:
+                self.get_logger().info(f"移動コマンド送信成功 (target pulses: {target_pulses})")
+                break
+            self.get_logger().warn(f"移動コマンド送信失敗 (試行 {attempt + 1})")
+
+    # ----------------------------
+    # Main loop
+    # ----------------------------
     def process(self):
-        """Main processing loop"""
         try:
             while rclpy.ok():
-                rclpy.spin_once(self)
+                rclpy.spin_once(self, timeout_sec=0.01)
         except KeyboardInterrupt:
             pass
         finally:
+            self._stop_all_motion("shutdown")
             self.step_control.close()
             self.get_logger().info("Serial connection closed")
 
 
 def main(args=None):
     rclpy.init(args=args)
-    
-    gripper_control = GripperControl()
-    gripper_control.process()
-    
-    # Cleanup
-    gripper_control.destroy_node()
+    node = GripperControl()
+    node.process()
+    node.destroy_node()
     rclpy.shutdown()
 
 

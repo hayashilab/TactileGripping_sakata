@@ -16,12 +16,26 @@ document/2025/AdvPractice/
 document/2025/IntPractice/
 document/2025/Research/asset/videos/
 
+memo/
+
 # video
 camera_ws/src/GraspEverything/videos/
 camera_ws/dataset/
+camera_ws/data_raw/
 
 camera_ws/src/calib_c920
 camera_ws/src/grasp_everything/grasp_everything/agents/
 
 # CLI
 AGENTS.md
+.claude/settings.local.json
+
+
+# weight
+camera_ws/runs/crush_detector/
+
+# dataset
+camera_ws/dataset_crush-diff/
+camera_ws/dataset_crush/
+camera_ws/data_crush/
+

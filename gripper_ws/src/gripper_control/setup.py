@@ -29,6 +29,7 @@ setup(
             'gripper_service_node = gripper_control.gripper_service_node:main',
             'gripper_force_control_node = gripper_control.gripper_force_control:main',
             'gripper_gelsight_control_node = gripper_control.gripper_gelsight_control:main',
+            'gripper_close_until_contact = gripper_control.gripper_close_until_contact:main',
         ],
     },
 

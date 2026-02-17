@@ -12,7 +12,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*')),
         ('share/' + package_name + '/weights', glob('weights/*')),
-        ('share/grasp_everything/launch', ['launch/view_stream.launch.py']),
+        ('share/grasp_everything/launch', glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -28,6 +28,13 @@ setup(
     entry_points={
         'console_scripts': [
             'stream_ros2 = grasp_everything.get_stream_from_url_ros2:main',
+            'data_collector = grasp_everything.data_collector_node:main',
+            'data_collection_cli = grasp_everything.data_collection_cli:main',
+            'data_collection_test = grasp_everything.data_collection_test:main',
+            'data_collection_orchestrator = grasp_everything.data_collection_orchestrator:main',
+            'manual_collection = grasp_everything.manual_collection:main',
+            'crush_collection = grasp_everything.crush_detection_collection:main',
+            'crush_detector = grasp_everything.crush_detector_node:main',
         ],
     },
 )

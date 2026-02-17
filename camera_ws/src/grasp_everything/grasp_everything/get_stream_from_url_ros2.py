@@ -259,7 +259,7 @@ class TactileRgbDiffPublisher(Node):
         self.declare_parameter("sigma", 0.0)
         self.declare_parameter("publish_diff_vis", True)
         # Contact detection parameters
-        self.declare_parameter("contact_threshold", 0.0075)
+        self.declare_parameter("contact_threshold", 0.006)
         self.declare_parameter("contact_n0_frames", 10)
         # Dataset collection parameters
         self.declare_parameter("dataset_dir", "./dataset")
@@ -299,6 +299,9 @@ class TactileRgbDiffPublisher(Node):
         # Dataset collection service
         self.create_service(SetBool, "/tactile/start_collection", self._on_start_collection)
         self.create_service(Trigger, "/tactile/reset_detector", self._on_reset_detector)
+        
+        # Add parameter callback for dynamic output_dir change
+        self.add_on_set_parameters_callback(self._on_parameter_change)
 
         # ---- Contact Detector ----
         self.contact_detector = ContactDetector(
@@ -343,6 +346,15 @@ class TactileRgbDiffPublisher(Node):
         self.get_logger().info(f"Publishing /tactile/raw_rgb, /tactile/diff_rgb, /tactile/contact_state from {url}")
         self.get_logger().info(f"Contact threshold: {self.contact_threshold}")
 
+    def _on_parameter_change(self, params):
+        """Handle dynamic parameter changes"""
+        from rcl_interfaces.msg import SetParametersResult
+        for param in params:
+            if param.name == 'dataset_dir':
+                self.dataset_dir = param.value
+                self.get_logger().info(f"Output directory changed to: {self.dataset_dir}")
+        return SetParametersResult(successful=True)
+
     def _on_gripper_step(self, msg: Int32):
         """Callback for gripper position updates"""
         self._current_gripper_step = msg.data
@@ -371,10 +383,10 @@ class TactileRgbDiffPublisher(Node):
 
             # Create dataset directory
             os.makedirs(self.dataset_dir, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            video_path = os.path.join(self.dataset_dir, f"tactile_{timestamp}.avi")
-            diff_video_path = os.path.join(self.dataset_dir, f"tactile_diff_{timestamp}.avi")
-            log_path = os.path.join(self.dataset_dir, f"contact_log_{timestamp}.csv")
+            # Use fixed filenames (no timestamp) for integration with data_collection scripts
+            video_path = os.path.join(self.dataset_dir, "gelsight_raw.avi")
+            diff_video_path = os.path.join(self.dataset_dir, "gelsight_diff.avi")
+            log_path = os.path.join(self.dataset_dir, "contact_log.csv")
 
             self._video_saver = AsyncAviSaver(out_path=video_path, fps=self.publish_hz).start()
             self._diff_video_saver = AsyncAviSaver(out_path=diff_video_path, fps=self.publish_hz).start()

@@ -273,3 +273,65 @@ class STEP_CONTROL:
                 return -3
 
         return 1
+
+    def tighten_until(
+        self,
+        stop_check,
+        rpm: int,
+        step: int,
+        max_abs_pulses: int = 50000,
+        sleep_margin_s: float = 0.01,
+        cmd_timeout: int = 10,
+    ):
+        """
+        stop_check() が True になるまで、step 分だけ相対移動を繰り返す。
+
+        Args:
+            stop_check: callable -> bool（Trueで停止）
+            rpm: 回転数
+            step: 相対パルス（正の値で閉じる方向）
+            max_abs_pulses: 安全上限（累積パルスの絶対値）
+            sleep_margin_s: 各ステップ後の追加待機時間
+            cmd_timeout: enable retry 回数
+
+        Returns:
+            1: stop_check() により停止
+            0: 安全上限で停止
+            負値: 通信エラー等
+        """
+        print(f"[tighten_until] rpm={rpm}, step={step}, max_abs_pulses={max_abs_pulses}")
+
+        # Enable
+        for i in range(cmd_timeout):
+            ret = self.setEnablePin(True)
+            print(f"[tighten_until] setEnablePin ret={ret}")
+            if ret == 1:
+                break
+            if i == cmd_timeout - 1:
+                return -10  # enable failed
+
+        sent_sum = 0
+        count = 0
+        while True:
+            if stop_check():
+                self.stopMotor()
+                print(f"[tighten_until] Stopped by stop_check at count={count}")
+                return 1
+
+            if abs(sent_sum) >= max_abs_pulses:
+                self.stopMotor()
+                print(f"[tighten_until] Reached max_abs_pulses at count={count}")
+                return 0
+
+            ret = self.setMotorRelativePose(rpm, step)
+            print(f"[tighten_until] count={count}, setMotorRelativePose ret={ret}, sent_sum={sent_sum}")
+            if ret != 1:
+                self.stopMotor()
+                return ret
+
+            sent_sum += step
+            count += 1
+
+            dt = self.calDelayTime(rpm, step) + sleep_margin_s
+            if dt > 0:
+                time.sleep(dt)
